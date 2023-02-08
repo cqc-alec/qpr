@@ -1,0 +1,12 @@
+digraph race {
+	init [label="" fillcolor=orange shape=diamond style=filled]
+	fin [label="" fillcolor=orangered shape=diamond style=filled]
+	J0 [label=A shape=rect]
+	J1 [label=B shape=rect]
+	init -> J0 [label=a color=black]
+	init -> J1 [label=b color=black]
+	join [label="" shape=point]
+	J0 -> join [label=c color=black]
+	J1 -> join [label=c color=black]
+	join -> fin [label=c color=black]
+}

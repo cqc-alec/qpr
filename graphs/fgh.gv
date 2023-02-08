@@ -1,0 +1,17 @@
+digraph fgh {
+	init [label=main fillcolor=orange shape=diamond style=filled]
+	f [label="(f)" fontcolor=darkorange4 shape=ellipse]
+	g [label="(g)" fontcolor=darkorange4 shape=ellipse]
+	h [label="(h)" fontcolor=darkorange4 shape=ellipse]
+	fin [label="" fillcolor=orangered shape=diamond style=filled]
+	init -> f [label=q color=blue]
+	init -> f [color=blue]
+	f -> g [label=q color=blue]
+	init -> g [color=blue]
+	g -> h [label=q color=blue]
+	init -> h [color=blue]
+	h -> fin [color=blue]
+	f -> fin [color=blue]
+	g -> fin [color=blue]
+	h -> fin [color=blue]
+}
