@@ -25,9 +25,7 @@ In particular the following constructions are in scope:
 
 For simplicity we assume a type system where every classical type has a fixed
 finite set of possible values, and every quantum type has a fixed finite set of
-basis values. (We could, without loss of generality, confine ourselves to bits
-and qubits, but allowing more general types is convenient and doesn't much
-affect the model.)
+basis values.
 
 Thus we may identify a classical type with a finite set and a quantum type with
 a finite-dimensional hilbert space.
@@ -52,9 +50,8 @@ tape. This data may be a fixed string or it may be computed from a classical
 type.
 
 The program has fixed entry and exit points. The entry point may have classical
-and quantum inputs, provided by the user or a previous program. The contents of
-the output tape are returned to the user on exit, or streamed during program
-execution.
+inputs, provided by the user. The contents of the output tape are returned to
+the user on exit, or streamed during program execution.
 
 Runtime errors are possible. Likely causes are (classical or quantum) resource
 exhaustion or invalid inputs to an atomic operation (such as division by zero).
@@ -134,38 +131,43 @@ There are a number of defined classical and quantum data types, such as `Bit`,
 the (finite) set of values it may take, and a quantum type is just a name for
 the (finite-dimensional) Hilbert space describing its state.
 
-Among the types is the `Unit` type, which has only one possible value, so
+In addition there are reference types, such as `&Qubit`. These are references
+to resources in the runtime environment. They are classical types (e.g. they
+could simply be integers pointing into a global register).
+
+There is a `Unit` type, which has only one possible value, so
 carries no information but is useful for expressing order, for example between
 write operations.
 
-The following are not data types (attached to wires), but are used for
-book-keeping (e.g. specifying parts of the graph or output data). For example,
-`NodeId` and `FnId` could be implemented as integers; while `Output` could be
-implemented as ASCII or byte strings.
+A _wire type_ is either a classical data type or a reference type (referring to
+either a classical or a quantum resource). (Quantum data types such as `Qubit`
+are not wire types.)
+
+The following additional types are used for book-keeping (e.g. specifying parts
+of the graph or output data). For example, `NodeId` and `FnId` could be
+implemented as integers; while `Output` could be implemented as ASCII or byte
+strings.
 
 - `Output` (a string of data to be appended to the output tape)
 - `FnId` (a unique function identifier)
 - `NodeId` (a unique node identifier)
 
-Data types _may_ have:
-
-- default values or states (necessary for initialization on allocation);
-- specified mappings to `Output` (for classical types, necessary for direct
-  output of values).
+Data types _may_ have default values or states (necessary for initialization on
+allocation). Classical data types may have specified mappings to `Output`.
 
 ### Signatures
 
-A _signature_ is a map from (string) names to types. For example, the input
+A _signature_ is a map from (string) names to wire types. For example, the input
 signature of a non-destructive measurement operation could be something like
 
 ```python
-{"q_in": Qubit}
+{"q_in": "&Qubit"}
 ```
 
 while the output signature could be
 
 ```python
-{"q_out": Qubit, "result": Bit}
+{"q_out": "&Qubit", "result": "Bit"}
 ```
 
 ### F-nodes
@@ -179,18 +181,24 @@ An _F-node_ (F for "functional") is an operation with:
 
 Predefined F-node types may include, for example:
 
-- a CX gate (two `Qubit` wires in, two `Qubit` wires out);
-- a non-destructive measurement (one `Qubit` wire in, one `Qubit` and one `Bit`
-  wire out);
-- a destructive measurement (one `Qubit` wire in, one `Bit` wire out);
+- a CX gate (two `&Qubit` wires in, two `&Qubit` wires out);
+- a non-destructive measurement (one `&Qubit` wire in, one `&Qubit` and one
+  `Bit` wire out);
+- a destructive measurement (one `&Qubit` wire in, one `Bit` wire out);
 - a 32-bit integer addition gate (two `i32` wires in, one `i32` wire out);
 - a bit copy (one `Bit` wire in, two `Bit` wires out);
-- a qubit allocation (no wires in, one `Qubit` wire out);
+- a qubit allocation (no wires in, one `&Qubit` wire out);
 
 and so on.
 
-We can define a generic copy operation for classical types, and generic
-allocation and deallocation operations for all types having a default.
+We can define a generic _copy_ operation for all wire types, and generic
+_allocation_ and _deallocation_ operations for all those where a default value
+or state is defined.
+
+Note that copy is defined even for references to quantum resources. Of course,
+only the reference is copied. (This allows, for example, copying of references
+to quantum registers which may enable parallelism in cases where different
+branches operate on different qubits within the register.)
 
 The set of predefined F-node types _must_ include:
 
@@ -211,7 +219,7 @@ These allow for writing of output, and user-defined functions, respectively.
 A _D-node_ (D for "decision") is an instruction with:
 
 - a fixed input signature;
-- a function mapping the classical input values to:
+- a function mapping the classical data input values to:
   - a `NodeId` (identifying the target node);
   - a type-matching injective mapping from input names of the target node to
     input names of the D-node.
@@ -227,9 +235,9 @@ chosen subset of the input data of the preceding D-node.
 ### FD-graphs
 
 An _FD-graph_ is a directed graph composed of F-nodes and D-nodes, connected
-by _data edges_.
+by _wires_.
 
-Data edges have associated types that match the types of their source and target
+Wires have associated wire types that match the types of their source and target
 ports.
 
 Note that a for each type in a node's inout signature, there may be several
@@ -276,11 +284,11 @@ The computational model for a program expressed as an FD-graph is as follows:
 
 Below is an FD-graph corresponding to the example pseudocode above.
 
-Black arrows are used for classical data, blue for quantum. Grey arrows are used
-for the `Unit` type. D-nodes are shown as green hexagons; C-nodes as green
-circles; all other nodes are F-nodes. Call nodes are ellipses; write nodes are
-right-pointing arrows. Initial and final nodes are diamonds. Allocation and
-deallocation nodes are circles.
+Black arrows are used for classical data, blue for references to quantum
+resources. Grey arrows are used for the `Unit` type. D-nodes are shown as green
+hexagons; C-nodes as green circles; all other nodes are F-nodes. Call nodes are
+ellipses; write nodes are right-pointing arrows. Initial and final nodes are
+diamonds. Allocation and deallocation nodes are circles.
 
 The picture does not show all of the information from the FD-graph – such as
 port labels and exact types – but shows all the nodes and edges of the graph.
@@ -304,9 +312,7 @@ There are three main questions to be answered:
 
 ### Coherence
 
-It is mostly straightforward to translate QIR to this representation. However,
-there may be some cases where it is not: I discuss the question of how to
-handle arrays and references below.
+It is straightforward to translate QIR to this representation.
 
 There is a minor issue with the ordering of write operations. Branching from
 F-nodes, although it does not introduce any ambiguity in the data, allows
@@ -325,8 +331,8 @@ order or the other. There are two ways round this:
 
 Either approach would be acceptable. Something like the latter would probably be
 necessary anyway, since QIR doesn't have quite the same output model (it has
-various
-"output schemas"), but doing the former may make the post-processing easier.
+various "output schemas"), but doing the former may make the post-processing
+easier.
 
 There are two more serious concerns, _hangs_ and _races_, which can be easily
 illustrated.
@@ -362,16 +368,19 @@ executed. Again, this would not arise from valid QIR. Note, however, that
 the _valid_ FD-graph for the function `f` above also has a similar join, coming
 from two _exclusive_ control-flow branches.
 
+Hangs and races illustrate that not all FD-graphs correspond to a valid QIR
+programs. Let's call those that do `regular`.
+
 ### Utility
 
-Convex subgraphs of an FD-graph that contain only F-nodes may be treated as
-basic blocks, and are amenable to TKET-style circuit optimization. These basic
-blocks are connected by the D-nodes and their associated C-nodes into a
+Convex subgraphs of a regular FD-graph that contain only F-nodes may be treated
+as basic blocks, and are amenable to TKET-style circuit optimization. These
+basic blocks are connected by the D-nodes and their associated C-nodes into a
 control-flow graph, which may be amenable to other optimizations. This
 factoring of the graph is likely to be useful. We may also be interested in
-applying optimizations to purely-classical regions (including both kinds of
-node), perhaps by going to and from LLVM and using standard passes. This
-suggests a three-step approach:
+applying optimizations to regions containing only classical data(including both
+kinds of node), perhaps by going to and from LLVM and using standard passes.
+This suggests a three-step approach:
 
 1. Identify maximal purely-classical regions of the graph; convert them to LLVM;
    optimize; convert back and substitute.
@@ -429,11 +438,10 @@ these wires as "optional".
 
 #### Hyperedges
 
-From my reading of the GGU proposal, the reason for hyperedges is to allow
-exactly the kinds of branches that D-nodes allow, but expressed in a slightly
-different way: a single hyperedge would connect an output port to all its
-possible destination ports. If that interpretation is correct then I think the
-difference is mainly one of interpretation.
+In the GGU proposal, hyperedges allow exactly the kinds of branches that D-nodes
+allow, but expressed in a slightly different way: a single hyperedge would
+connect an output port to all its possible destination ports. The difference
+seems to be mainly one of interpretation.
 
 #### Hierarchy
 
@@ -455,49 +463,19 @@ of the data flow.
 
 ## Open questions
 
-### Arrays and references
-
-It is legitimate in QIR to alllocate an array of qubits and access them via a
-non-constant variable. How would we represent these arrays (registers) in the
-graph, and how can we express code like
-
-```python
-def f(q_array):
-    # q_array is an array of 20 qubits
-    for i in range(10):
-        CX(q_array[2 * i], q_array[2 * i + 1])
-```
-
-in a way that makes parallelization transparent, without having to unroll the
-loop? If we assume some sort of classical register type for `q_array` then we
-would naturally envisage operations like
-
-![](graphs/regalloc.gv.svg)
-
-where the access operation is occurring inside `f`. This raises questions like:
-
-- Is it enough to make a register non-copyable, and does this lose us anything?
-- Do we need a distinction between "const" and non-"const" registers?
-- What is the type of resource returned by the access function? `Qubit` or
-  reference-to-`Qubit`? If `Qubit`, how do we prevent a later access from
-  returning the same `Qubit` (violating non-copyability)? Some sort of
-  reference type seems unavoidable. Again, "const" or non-"const"?
-- If it is a reference, do we need a "dereference" operation before passing it
-  into "CX", and how does this work?
-- Does the convenient mental model of qubits being physically moved around the
-  graph (like ions) have to be abandoned, with references floating around?
-
 ### Annotations
 
-Other annotations could be useful when it comes to compiling for specific
-devices. For example, if `f`, `g` and `h` are three mutually commuting
-operations with some data dependency (e.g. a shared control qubit), can we tell
-the compiler that it is free to reorder them (to minimize ion transport, for
-example)?
+Annotations could be useful when it comes to compiling for specific
+devices. Useful annotations might include:
+
+- parallelizability;
+- commutativity – if `f`, `g` and `h` are three mutually commuting operations
+  with some data dependency (e.g. a shared control qubit), can we tell the
+  compiler that it is free to reorder them (e.g. to minimize ion transport)?
 
 ![](graphs/fgh.gv.svg)
 
-### Characterization of well-formed graphs
+### Characterization of regular graphs
 
 Is there a nice way to characterize FD-graphs that avoid the "hangs" and "races"
 problems highlighted above? This is probably closely related to the problem of
@@ -542,10 +520,9 @@ As next steps I propose:
   with it;
 - implementation of the data structure in code, together with an execution
   engine (simulator);
-- expressing well-formedness (avoidance of the aforementioned hang and race
-  problems) as graph properties;
+- expressing regularity (avoidance of the aforementioned hang and race problems)
+  as graph properties;
 - implementation of a translation from this structure to (perhaps a simplified
   version of) QIR;
-- addressing the other open questions above (limits of expressivity;
-  annotations);
-- further investigation of optimization strategies.
+- investigation of annotations;
+- investigation of optimization strategies.
