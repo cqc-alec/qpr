@@ -170,16 +170,30 @@ while the output signature could be
 {"q_out": "&Qubit", "result": "Bit"}
 ```
 
-### F-nodes
+### E-nodes
 
-An _F-node_ (F for "functional") is an operation with:
+An _E-node_ (E for "executable") is an operation with:
 
 - a fixed input signature;
 - a fixed output signature;
-- a unique specifier (specifying the functionality, e.g. `CX` or `myfunc`);
+- a specifier (specifying the functionality, e.g. `CX` or `myfunc`);
 - optionally, a `NodeId` (identifying the instance).
 
-Predefined F-node types may include, for example:
+An E-node _executes_ in the context of a runtime environment, which includes
+a pool of classical and quantum _resources_ (for example, some fixed number of
+qubits and some fixed amount of classical memory).
+
+When an E-node _executes_, it performs some operation on its inputs (which may
+be any combination of classical data and references to resources); this results
+in some subset (possibly all) of the output wires being activated. The operation
+definition is specified externally, either as a predefined E-node or as a
+_function_ specified by its `FnId`.
+
+Wires between E-nodes must type-match: that is, the type corresponding to the
+named output port of the source must match that corresponding to the named input
+port of the target.
+
+Predefined E-node types may include, for example:
 
 - a CX gate (two `&Qubit` wires in, two `&Qubit` wires out);
 - a non-destructive measurement (one `&Qubit` wire in, one `&Qubit` and one
@@ -200,12 +214,12 @@ only the reference is copied. (This allows, for example, copying of references
 to quantum registers which may enable parallelism in cases where different
 branches operate on different qubits within the register.)
 
-The set of predefined F-node types _must_ include:
+The set of predefined E-node types _must_ include:
 
-- `write` nodes: these write a given `Output` string to the output tape. If they
-  write a literal they have a `Unit` input wire; if they write a classical
-  value (with a defined map to `Output`) they have an input wire of that type.
-  They have a `Unit` output wire.
+- `write` nodes: these write a given `Output` string to the output tape. This
+  may be a literal, or a classical data value (with a defined map to `Output`);
+  in the latter case they have an input wire of that type. (In the former case,
+  order can be enforced with a `Unit` wire.)
 - `call` nodes: these call a _function_ (see below), given:
     - the function's `FnId`;
     - a type-matching bijection from node input names to function input names;
@@ -214,42 +228,23 @@ The set of predefined F-node types _must_ include:
 
 These allow for writing of output, and user-defined functions, respectively.
 
-### D-nodes
+### E-graphs
 
-A _D-node_ (D for "decision") is an instruction with:
-
-- a fixed input signature;
-- a function mapping the classical data input values to:
-  - a `NodeId` (identifying the target node);
-  - a type-matching injective mapping from input names of the target node to
-    input names of the D-node.
-
-Decision nodes are used to implement control flow.
-
-### C-nodes
-
-A _C-node_ (C for "choice") is an _F-node_ node that succeeds a D-node. It is a
-no-op, so its input and output signatures are the same. It serves to channel a
-chosen subset of the input data of the preceding D-node.
-
-### FD-graphs
-
-An _FD-graph_ is a directed graph composed of F-nodes and D-nodes, connected
-by _wires_.
+An _E-graph_ is a directed graph composed of E-nodes, connected by _wires_.
 
 Wires have associated wire types that match the types of their source and target
 ports.
 
-Note that a for each type in a node's inout signature, there may be several
+Note that a for each type in a node's input signature, there may be several
 edges (coming from different predecessor nodes) that match it.
 
 ### Functions
 
-A _function_ is a named FD-graph with a distinguished _initial_ F-node having no
-input wires and a distinguished _final_ F-node having no output wires. The
-input signature of the function is defined to be the output signature of its
-initial node, and the output signature of the function is defined to be the
-input signature of its final node.
+A _function_ is a named E-graph with a distinguished _initial_ node having no
+input wires and a distinguished _final_ node having no output wires. The input
+signature of the function is defined to be the output signature of its initial
+node, and the output signature of the function is defined to be the input
+signature of its final node.
 
 This definition avoids the need for dangling edges in the graph.
 
@@ -260,16 +255,14 @@ with a distinguished function (called `main`).
 
 ### Computational model
 
-The computational model for a program expressed as an FD-graph is as follows:
+The computational model for a program expressed as an E-graph is as follows:
 
 - Every node has certain fixed input wires, which "fire" when they receive
   input.
-- When all input ports have received a firing input wire, the node may
-  "execute", i.e. perform its operation (in the case of an F-node) or decision
-  (in the case of a D-node). It then switches its input wires to the waiting
-  state, waits for all its output wires to be in the waiting state, and then
-  fires the necessary output wires (all of them in the case of an F-node, just
-  the chosen ones leading to the chosen C-node in the case of a D-node).
+- When all input ports have received a firing input wire, the node may execute.
+  It then switches its input wires to the waiting state, waits for all its
+  output wires to be in the waiting state, and then fires the chosen output
+  wires.
 - At program start, all wires are in a waiting state and the main function's
   input node is executed, outputting the program's input. (If there is no
   input, there will be a `Unit` wire which is fired.)
@@ -280,17 +273,19 @@ The computational model for a program expressed as an FD-graph is as follows:
 - When all the input wires of the main function's final node have fired, the
   program exits.
 
-## Example program (as FD-graph)
+In this picture, the nodes and edges are like cellular automata.
 
-Below is an FD-graph corresponding to the example pseudocode above.
+## Example program (as E-graph)
+
+Below is an E-graph corresponding to the example pseudocode above.
 
 Black arrows are used for classical data, blue for references to quantum
-resources. Grey arrows are used for the `Unit` type. D-nodes are shown as green
-hexagons; C-nodes as green circles; all other nodes are F-nodes. Call nodes are
-ellipses; write nodes are right-pointing arrows. Initial and final nodes are
-diamonds. Allocation and deallocation nodes are circles.
+resources. Grey arrows are used for the `Unit` type. Branching nodes are shown
+as green hexagons; their destinations are shown as (no-op) green circles. Call
+nodes are ellipses; write nodes are right-pointing arrows. Initial and final
+nodes are diamonds. Allocation and deallocation nodes are circles.
 
-The picture does not show all of the information from the FD-graph – such as
+The picture does not show all of the information from the E-graph – such as
 port labels and exact types – but shows all the nodes and edges of the graph.
 
 ![](graphs/example.gv.svg "https://xkcd.com/710/")
@@ -337,7 +332,7 @@ easier.
 There are two more serious concerns, _hangs_ and _races_, which can be easily
 illustrated.
 
-_Hangs_. Consider this FD-graph:
+_Hangs_. Consider this E-graph:
 
 ![](graphs/hang.gv.svg)
 
@@ -352,10 +347,10 @@ but only one can be executed.
 We can argue that this is simply a badly-constructed program, for the above
 reason, which would never arise from valid QIR. However, it highlights the fact
 that even a DAG may not terminate when there is control flow, and conversion of
-an FD-graph to (e.g.) QIR probably needs to begin with an analysis of the
+an E-graph to (e.g.) QIR probably needs to begin with an analysis of the
 dominance graph.
 
-_Races_. Comsiser this FD-graph:
+_Races_. Comsiser this E-graph:
 
 ![](graphs/race.gv.svg)
 
@@ -365,22 +360,22 @@ or "B", and there is no guarantee as to which.
 
 Here the problem is that data joins from two paths both of which may be
 executed. Again, this would not arise from valid QIR. Note, however, that
-the _valid_ FD-graph for the function `f` above also has a similar join, coming
+the _valid_ E-graph for the function `f` above also has a similar join, coming
 from two _exclusive_ control-flow branches.
 
-Hangs and races illustrate that not all FD-graphs correspond to a valid QIR
+Hangs and races illustrate that not all E-graphs correspond to a valid QIR
 programs. Let's call those that do `regular`.
 
 ### Utility
 
-Convex subgraphs of a regular FD-graph that contain only F-nodes may be treated
+Convex subgraphs of a regular E-graph that contain no branching may be treated
 as basic blocks, and are amenable to TKET-style circuit optimization. These
-basic blocks are connected by the D-nodes and their associated C-nodes into a
-control-flow graph, which may be amenable to other optimizations. This
-factoring of the graph is likely to be useful. We may also be interested in
-applying optimizations to regions containing only classical data(including both
-kinds of node), perhaps by going to and from LLVM and using standard passes.
-This suggests a three-step approach:
+basic blocks are connected by branching nodes into a control-flow graph, which
+may be amenable to other optimizations. This factoring of the graph is likely
+to be useful. We may also be interested in applying optimizations to regions
+containing only classical data(including both kinds of node), perhaps by going
+to and from LLVM and using standard passes. This suggests a three-step
+approach:
 
 1. Identify maximal purely-classical regions of the graph; convert them to LLVM;
    optimize; convert back and substitute.
@@ -388,11 +383,12 @@ This suggests a three-step approach:
    passes.
 3. Apply CFG-level optimizations (a well-studied problem).
 
-The ability for D-nodes to be "hidden" inside F-nodes via function calls
-(for example, the function `f` above contains D-nodes but can be called as an
-F-node) opens the door to higher-level custom optimizations but also begs the
-question of how we can annotate user-defined functions with information such as
-commutativity or parallelizability (discussed below).
+The ability for control flow to be "hidden" inside purely-functionaal nodes via
+function calls(for example, the function `f` above contains branches but can be
+called as a straight-line function) opens the door to higher-level custom
+optimizations but also begs the question of how we can annotate user-defined
+functions with information such as commutativity or parallelizability
+(discussed below).
 
 If we can implement user-defined pattern-matching passes on TKET2 graphs then
 they should be applicable here too; thus we can accommodate user-defined passes
@@ -424,11 +420,10 @@ important features: ports, hyperedges, hierarchy, and nonsequentiality.
 
 #### Ports
 
-It is possible to represent an FD-graph as a portgraph, provided we are willing
-to accept the multiplication of the output ports of D-nodes. Specifically, if a
-D-node has $n$ possible successor C-nodes, with signatures $S_i$
-( $0 \leq i < n$ ), then the outgoing ports of the D-node are the disjoint union
-$\bigcup_{0 \leq i < n} S_i$.
+It is possible to represent an E-graph as a portgraph that allows multiple wires
+into a single input port, provided we are willing to accept the multiplication
+of the output ports of branching nodes, with the interpretation that not all
+need be activated on execution.
 
 It's debatable whether this is a hack or a useful application of the portgraph
 idea. To make it work with the computational model described above, it is
@@ -457,7 +452,7 @@ of functions seems a better solution.
 
 #### Nonsequentiality
 
-Nonsequentiality is built into the FD-graph model. The computational model
+Nonsequentiality is built into the E-graph model. The computational model
 described above imposes no ordering on the operations beyond the requirements
 of the data flow.
 
@@ -477,34 +472,9 @@ devices. Useful annotations might include:
 
 ### Characterization of regular graphs
 
-Is there a nice way to characterize FD-graphs that avoid the "hangs" and "races"
+Is there a nice way to characterize E-graphs that avoid the "hangs" and "races"
 problems highlighted above? This is probably closely related to the problem of
-translating the FD-graph to valid QIR.
-
-## A simplification
-
-The execution model as described above suggests a framework that is both simpler
-and more general than FD-graphs, and may repay further consideration.
-
-Our new directed graph has only one type of node, which acts as either an F-node
-or a D-node or combines the two. There is a distinguished initial node with no
-inputs and a distinguished final node with no outputs. Every edge has a type.
-During execution, edges may be firing or waiting. Initially, all edges are
-waiting except for the output edges of the initial node, which fire with the
-input data.
-
-Each node is an automaton, or worker. When all its input wires are firing _and_
-all its output wires are waiting, it executes. Execution ends with _some subset
-of_ its output wires being fired with computed data. Both the computed data and
-its destination wires are part of the computation. It then puts all its input
-wires back into the waiting state.
-
-When the final node executes, the program ends.
-
-One thing we _lose_ in this simplification is being able to see from the graph
-exactly which sets of output wires can fire on each node execution. This
-information would instead be implicit in the definitions of the nodes'
-functionality, and could of course be captured as annotations.
+translating the E-graph to valid QIR.
 
 ## Conclusions
 
